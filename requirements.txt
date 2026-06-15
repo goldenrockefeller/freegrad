@@ -1,0 +1,8 @@
+jax
+jaxlib
+numpy
+matplotlib
+pandas
+tensorflow
+tensorflow-datasets
+pytest
