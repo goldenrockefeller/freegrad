@@ -40,7 +40,7 @@ class ArrayDataLoader:
                 "y": self.arrays["y"][batch_indices],
             }
 
-#TODO make this jit. Make sure that jit doesn't take forever to compile
+
 def batched_output(function: Callable[[Any, Any, Any], Any], batch_size: int):
     if batch_size <= 0:
         raise ValueError("batch_size must be positive.")

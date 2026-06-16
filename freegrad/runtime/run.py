@@ -218,7 +218,6 @@ def _initialize_or_resume_state(
 
 
 def _parse_training_config(config: dict[str, Any]) -> TrainingLoopConfig:
-    _reject_legacy_training_config_keys(config)
     _reject_unknown_training_config_keys(config)
 
     required_keys = {
@@ -281,28 +280,6 @@ def _parse_validation_config(config: dict[str, Any]) -> ValidationStepConfig:
 
     return ValidationStepConfig(mini_batch_size=mini_batch_size, macro_batch_size=macro_batch_size)
 
-# TODO Remove this
-def _reject_legacy_training_config_keys(config: dict[str, Any]) -> None:
-    legacy_key_map = {
-        "batch_size": "mini_batch_size",
-        "update_batch_size": "macro_batch_size",
-        "gradient_accumulation_batch_size": "macro_batch_size",
-        "eval_batch_size": "eval_mini_batch_size + eval_macro_batch_size",
-        "update_group_size": "train_chunk_size",
-        "checkpoint_every_update_groups": "n_chunks_per_checkpoint",
-        "steps_per_execution": "train_chunk_size",
-        "checkpoint_every": "n_chunks_per_checkpoint",
-    }
-    legacy_mappings = [
-        f"{legacy_key} -> {replacement_key}"
-        for legacy_key, replacement_key in legacy_key_map.items()
-        if legacy_key in config
-    ]
-    if legacy_mappings:
-        raise ValueError(
-            "Legacy training_config keys are no longer supported: " + ", ".join(legacy_mappings) + "."
-        )
-
 
 def _reject_unknown_training_config_keys(config: dict[str, Any]) -> None:
     allowed_keys = {
@@ -320,6 +297,8 @@ def _reject_unknown_training_config_keys(config: dict[str, Any]) -> None:
     unknown = sorted(key for key in config if key not in allowed_keys)
     if unknown:
         raise ValueError("training_config has unsupported keys: " + ", ".join(unknown) + ".")
+
+
 def _record_chunk_artifacts(
     *,
     context: RunContext,
