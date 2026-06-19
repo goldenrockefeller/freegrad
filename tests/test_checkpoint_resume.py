@@ -6,10 +6,10 @@ import pickle
 import numpy as np
 import pytest
 
-from freegrad.losses.classification import build_cross_entropy_loss
-from freegrad.metrics.classification import build_classification_metrics
+from freegrad.learning import adam
+from freegrad.losses.classification import CrossEntropyLoss
+from freegrad.metrics.classification import ClassificationMetrics
 from freegrad.models.mlp import SimpleMLP
-from freegrad.optimizers.adam import Adam
 from freegrad.runtime.backends.base import StudyConfirmationHandler
 from freegrad.runtime.backends.local import LocalBackend
 from freegrad.runtime.condition import ConditionSpec
@@ -50,9 +50,9 @@ def _make_condition(name: str, *, max_steps: int, dataset_seed: int) -> Conditio
         dataset_loader=_dataset_factory(dataset_seed),
         data_preparer_builder=_prep_factory,
         model_builder=lambda: SimpleMLP(),
-        optimizer_builder=lambda: Adam(learning_rate=1e-3),
-        loss_builder=build_cross_entropy_loss,
-        metrics_builder=build_classification_metrics,
+        learning_stack_builder=lambda: adam(learning_rate=1e-3),
+        loss_builder=lambda: CrossEntropyLoss(),
+        metrics_builder=lambda: ClassificationMetrics(),
         training_config={
             "mini_batch_size": 4,
             "macro_batch_size": 8,
@@ -89,7 +89,7 @@ def test_checkpoint_resume_reaches_expected_step(tmp_path):
         dataset_loader=condition.dataset_loader,
         data_preparer_builder=condition.data_preparer_builder,
         model_builder=condition.model_builder,
-        optimizer_builder=condition.optimizer_builder,
+        learning_stack_builder=condition.learning_stack_builder,
         loss_builder=condition.loss_builder,
         metrics_builder=condition.metrics_builder,
         training_config={**condition.training_config, "max_steps": 4, "resume": True},

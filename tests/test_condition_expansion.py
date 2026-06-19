@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from freegrad.losses.classification import build_cross_entropy_loss
-from freegrad.metrics.classification import build_classification_metrics
+from freegrad.learning import sgd
+from freegrad.losses.classification import CrossEntropyLoss
+from freegrad.metrics.classification import ClassificationMetrics
 from freegrad.runtime.condition import ConditionSpec
 from freegrad.runtime.run import RunSpec
 from freegrad.runtime.study import StudySpec
@@ -16,9 +17,9 @@ def _dummy_condition(name: str, seeds: list[int]) -> ConditionSpec:
         dataset_loader=lambda: None,
         data_preparer_builder=lambda: (lambda raw_data, validation_size=5000: raw_data),
         model_builder=lambda: None,
-        optimizer_builder=lambda: None,
-        loss_builder=build_cross_entropy_loss,
-        metrics_builder=build_classification_metrics,
+        learning_stack_builder=lambda: sgd(0.1),
+        loss_builder=lambda: CrossEntropyLoss(),
+        metrics_builder=lambda: ClassificationMetrics(),
         training_config={"max_steps": 1},
     )
 
@@ -53,9 +54,9 @@ def test_runspec_defaults_study_name_for_direct_construction():
         dataset_loader=lambda: None,
         data_preparer_builder=lambda: (lambda raw_data, validation_size=5000: raw_data),
         model_builder=lambda: None,
-        optimizer_builder=lambda: None,
-        loss_builder=build_cross_entropy_loss,
-        metrics_builder=build_classification_metrics,
+        learning_stack_builder=lambda: sgd(0.1),
+        loss_builder=lambda: CrossEntropyLoss(),
+        metrics_builder=lambda: ClassificationMetrics(),
         training_config={"max_steps": 1},
     )
 

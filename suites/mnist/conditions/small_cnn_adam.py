@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from freegrad.data_prep.mnist import prepare_mnist_arrays
 from freegrad.datasets.mnist import load_mnist
-from freegrad.losses.classification import build_cross_entropy_loss
-from freegrad.metrics.classification import build_classification_metrics
+from freegrad.learning import adam
+from freegrad.losses.classification import CrossEntropyLoss
+from freegrad.metrics.classification import ClassificationMetrics
 from freegrad.models.small_cnn import ModernSmallCNN
-from freegrad.optimizers.adam import Adam
 from freegrad.runtime.condition import ConditionSpec
 
 
@@ -18,9 +18,9 @@ def make_condition() -> ConditionSpec:
         dataset_loader=lambda: load_mnist(),
         data_preparer_builder=lambda: prepare_mnist_arrays,
         model_builder=lambda: ModernSmallCNN(),
-        optimizer_builder=lambda: Adam(learning_rate=1e-3),
-        loss_builder=build_cross_entropy_loss,
-        metrics_builder=build_classification_metrics,
+        learning_stack_builder=lambda: adam(learning_rate=1e-3),
+        loss_builder=lambda: CrossEntropyLoss(),
+        metrics_builder=lambda: ClassificationMetrics(),
         training_config={
             "mini_batch_size": 128,
             "macro_batch_size": 128,

@@ -7,9 +7,8 @@ from typing import Any, Protocol, runtime_checkable
 
 import jax
 
-from freegrad.grad_scalers.common.base import GradScaler
+from freegrad.learning.base import LearningStack
 from freegrad.models.common.base import Model
-from freegrad.optimizers.common.base import Optimizer
 
 
 ModelApply = Callable[..., jax.Array]
@@ -40,14 +39,9 @@ class ModelBuilder(Protocol):
 
 
 @runtime_checkable
-class GradScalerBuilder(Protocol):
-    def __call__(self) -> GradScaler:
-        ...
-
-
 @runtime_checkable
-class OptimizerBuilder(Protocol):
-    def __call__(self) -> Optimizer:
+class LearningStackBuilder(Protocol):
+    def __call__(self) -> LearningStack:
         ...
 
 
@@ -59,7 +53,7 @@ class LossFn(Protocol):
 
 @runtime_checkable
 class LossBuilder(Protocol):
-    def __call__(self, model_apply: ModelApply) -> LossFn:
+    def __call__(self, model_apply: ModelApply | None = None) -> Any:
         ...
 
 
@@ -71,5 +65,5 @@ class MetricsFn(Protocol):
 
 @runtime_checkable
 class MetricsBuilder(Protocol):
-    def __call__(self, model_apply: ModelApply) -> MetricsFn:
+    def __call__(self, model_apply: ModelApply | None = None) -> Any:
         ...

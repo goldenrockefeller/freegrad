@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import jax
 
-from freegrad.models.common.base import Model
+from freegrad.models.common.base import ApplyResult, Model, ModelMode, ModelVariables, ParamLayout
 from freegrad.models.common.init import glorot_uniform, zeros
 from freegrad.models.common.layers import flatten, linear, relu
+from freegrad.models.common.layout import infer_param_layout
 
 
 class SimpleMLP(Model):
-    def init(self, key: jax.Array, input_shape: tuple[int, ...], num_classes: int) -> dict[str, dict[str, jax.Array]]:
+    def init(self, key: jax.Array, input_shape: tuple[int, ...], num_classes: int) -> ModelVariables:
         flat_dim = input_shape[0] * input_shape[1] * input_shape[2]
         keys = jax.random.split(key, 3)
-        return {
+        params = {
             "dense1": {
                 "w": glorot_uniform(keys[0], (flat_dim, 256)),
                 "b": zeros((256,)),
@@ -27,10 +28,21 @@ class SimpleMLP(Model):
                 "b": zeros((num_classes,)),
             },
         }
+        return ModelVariables(params=params, state={})
 
-    def apply(self, params: dict[str, dict[str, jax.Array]], x: jax.Array, training: bool = False, rng_key: jax.Array | None = None) -> jax.Array:
-        del training, rng_key
+    def apply(
+        self,
+        variables: ModelVariables,
+        x: jax.Array,
+        mode: ModelMode = ModelMode.EVAL,
+        rng_key: jax.Array | None = None,
+    ) -> ApplyResult:
+        del mode, rng_key
+        params = variables.params
         x = flatten(x)
         x = relu(linear(params["dense1"], x))
         x = relu(linear(params["dense2"], x))
-        return linear(params["dense3"], x)
+        return ApplyResult(output=linear(params["dense3"], x), model_state=variables.state)
+
+    def param_layout(self, variables: ModelVariables) -> ParamLayout:
+        return infer_param_layout(variables.params)

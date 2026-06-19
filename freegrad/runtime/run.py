@@ -10,18 +10,21 @@ from typing import Any
 import jax
 import numpy as np
 
-from freegrad.data_prep.batching import batched_loss, batched_metrics
+from freegrad.execution.single_cpu import SingleCPUExecutionDriver
+from freegrad.losses.base import ReducibleLoss
+from freegrad.losses.classification import CrossEntropyLoss
+from freegrad.metrics.base import ReducibleMetric
+from freegrad.metrics.classification import ClassificationMetrics
 from freegrad.models.common.base import Model
-from freegrad.optimizers.common.base import Optimizer
 from freegrad.runtime.checkpointing.pickle_fallback import latest_checkpoint, load_checkpoint, save_checkpoint
 from freegrad.runtime.context import RunContext
 from freegrad.runtime.interfaces import (
     DataPreparerBuilder,
     DatasetLoader,
+    LearningStackBuilder,
     LossBuilder,
     MetricsBuilder,
     ModelBuilder,
-    OptimizerBuilder,
 )
 from freegrad.runtime.paths import checkpoints_dir
 from freegrad.runtime.status import write_status
@@ -43,7 +46,7 @@ class RunSpec:
     dataset_loader: DatasetLoader
     data_preparer_builder: DataPreparerBuilder
     model_builder: ModelBuilder
-    optimizer_builder: OptimizerBuilder
+    learning_stack_builder: LearningStackBuilder
     loss_builder: LossBuilder
     metrics_builder: MetricsBuilder
     training_config: dict[str, Any]
@@ -106,18 +109,27 @@ def run_one(run_spec: RunSpec) -> RunResult:
         except TypeError:
             arrays = prepare_arrays(raw_data)
 
-        optimizer = run_spec.optimizer_builder()
+        learning_stack = run_spec.learning_stack_builder()
         model = run_spec.model_builder()
-        base_loss_fn = run_spec.loss_builder(model.apply)
-        base_metrics_fn = run_spec.metrics_builder(model.apply)
-
-        train_loss_fn = batched_loss(base_loss_fn, loop_config.mini_batch_size)
-        train_metrics_fn = batched_metrics(base_metrics_fn, loop_config.mini_batch_size)
+        loss = _build_loss(run_spec.loss_builder)
+        metric = _build_metric(run_spec.metrics_builder)
         validation_config = _parse_validation_config(config)
-        eval_metrics_fn = batched_metrics(base_metrics_fn, validation_config.mini_batch_size)
 
-        train_update_chunk_step = make_train_update_chunk_step(train_loss_fn, train_metrics_fn, optimizer)
-        eval_step = make_eval_step(eval_metrics_fn)
+        train_driver = SingleCPUExecutionDriver(
+            model=model,
+            loss=loss,
+            metric=metric,
+            micro_batch_size=loop_config.mini_batch_size,
+        )
+        eval_driver = SingleCPUExecutionDriver(
+            model=model,
+            loss=loss,
+            metric=metric,
+            micro_batch_size=validation_config.mini_batch_size,
+        )
+
+        train_update_chunk_step = make_train_update_chunk_step(train_driver, learning_stack)
+        eval_step = make_eval_step(eval_driver)
         train_runner = TrainChunkRunner(
             arrays={"x": arrays["train_images"], "y": arrays["train_labels"]},
             macro_batch_size=loop_config.macro_batch_size,
@@ -126,19 +138,20 @@ def run_one(run_spec: RunSpec) -> RunResult:
             seed=run_spec.seed,
             train_update_chunk_step=train_update_chunk_step,
         )
-        validation_runner = _make_validation_runner(arrays, validation_config, eval_step)
+        validation_runner = _make_validation_runner(arrays, validation_config, eval_step, eval_driver)
 
         state = _initialize_or_resume_state(
             run_spec=run_spec,
             arrays=arrays,
             model=model,
-            optimizer=optimizer,
+            learning_stack=learning_stack,
             resume=loop_config.resume,
             checkpoint_dir=context.checkpoint_dir,
         )
 
         last_train_metrics: dict[str, float] = {}
         last_eval_metrics: dict[str, float] = {}
+        last_eval_step: int | None = None
         completed_train_chunks = int(np.asarray(state.step)) // loop_config.train_chunk_size
         while train_runner.has_next_chunk(state):
             chunk_result = train_runner.run_next_chunk(state)
@@ -155,14 +168,20 @@ def run_one(run_spec: RunSpec) -> RunResult:
                 state=state,
                 train_metrics=last_train_metrics,
             )
-            if loop_config.eval_every > 0 and completed_train_chunks % loop_config.eval_every == 0:
-                last_eval_metrics = _to_python_dict(validation_runner.evaluate(state.params))
+            should_validate = (
+                loop_config.eval_every > 0
+                and completed_train_chunks % loop_config.eval_every == 0
+            ) or _is_checkpoint_chunk(loop_config.n_chunks_per_checkpoint, completed_train_chunks)
+            if should_validate:
+                last_eval_metrics = _to_python_dict(validation_runner.evaluate(state.variables))
                 logger.log_metrics(current_step, last_eval_metrics)
+                last_eval_step = current_step
 
         final_step = int(np.asarray(state.step))
-        if not last_eval_metrics:
-            last_eval_metrics = _to_python_dict(validation_runner.evaluate(state.params))
+        if last_eval_step != final_step:
+            last_eval_metrics = _to_python_dict(validation_runner.evaluate(state.variables))
             logger.log_metrics(final_step, last_eval_metrics)
+            last_eval_step = final_step
 
         if loop_config.n_chunks_per_checkpoint > 0:
             save_checkpoint(
@@ -198,7 +217,7 @@ def _initialize_or_resume_state(
     run_spec: RunSpec,
     arrays: dict[str, Any],
     model: Model,
-    optimizer: Optimizer,
+    learning_stack,
     resume: bool,
     checkpoint_dir: Path,
 ) -> TrainState:
@@ -212,9 +231,9 @@ def _initialize_or_resume_state(
     model_key, train_key = jax.random.split(rng_key)
     input_shape = tuple(arrays["train_images"].shape[1:])
     num_classes = int(np.max(arrays["train_labels"])) + 1
-    params = model.init(model_key, input_shape=input_shape, num_classes=num_classes)
-    optimizer_state = optimizer.init(params)
-    return TrainState(step=0, params=params, optimizer_state=optimizer_state, model_state=None, rng_key=train_key)
+    variables = model.init(model_key, input_shape=input_shape, num_classes=num_classes)
+    learning_state = learning_stack.init(variables)
+    return TrainState(step=0, variables=variables, learning_state=learning_state, rng_key=train_key)
 
 
 def _parse_training_config(config: dict[str, Any]) -> TrainingLoopConfig:
@@ -312,11 +331,7 @@ def _record_chunk_artifacts(
     current_step = int(np.asarray(state.step))
     logger.log_metrics(current_step, train_metrics)
     write_status(context.output_dir, "RUNNING", step=current_step)
-    if (
-        n_chunks_per_checkpoint > 0
-        and completed_train_chunks > 0
-        and completed_train_chunks % n_chunks_per_checkpoint == 0
-    ):
+    if _is_checkpoint_chunk(n_chunks_per_checkpoint, completed_train_chunks):
         save_checkpoint(
             context.checkpoint_dir / f"step_{current_step:08d}.pkl",
             state,
@@ -324,12 +339,50 @@ def _record_chunk_artifacts(
         )
 
 
-def _make_validation_runner(arrays: dict[str, Any], validation_config: ValidationStepConfig, eval_step) -> ValidationRunner:
+def _is_checkpoint_chunk(n_chunks_per_checkpoint: int, completed_train_chunks: int) -> bool:
+    return (
+        n_chunks_per_checkpoint > 0
+        and completed_train_chunks > 0
+        and completed_train_chunks % n_chunks_per_checkpoint == 0
+    )
+
+
+def _make_validation_runner(
+    arrays: dict[str, Any],
+    validation_config: ValidationStepConfig,
+    eval_step,
+    eval_driver,
+) -> ValidationRunner:
     if arrays["validation_images"].shape[0] > 0:
         eval_arrays = {"x": arrays["validation_images"], "y": arrays["validation_labels"]}
     else:
         eval_arrays = {"x": arrays["test_images"], "y": arrays["test_labels"]}
-    return ValidationRunner(arrays=eval_arrays, macro_batch_size=validation_config.macro_batch_size, eval_step=eval_step)
+    return ValidationRunner(
+        arrays=eval_arrays,
+        macro_batch_size=validation_config.macro_batch_size,
+        eval_step=eval_step,
+        execution_driver=eval_driver,
+    )
+
+
+def _build_loss(loss_builder: LossBuilder) -> ReducibleLoss:
+    try:
+        loss = loss_builder()
+    except TypeError:
+        loss = loss_builder(None)
+    if hasattr(loss, "apply") and hasattr(loss, "reduce") and hasattr(loss, "finalize"):
+        return loss
+    return CrossEntropyLoss()
+
+
+def _build_metric(metrics_builder: MetricsBuilder) -> ReducibleMetric:
+    try:
+        metric = metrics_builder()
+    except TypeError:
+        metric = metrics_builder(None)
+    if hasattr(metric, "apply") and hasattr(metric, "reduce") and hasattr(metric, "finalize"):
+        return metric
+    return ClassificationMetrics()
 
 
 def _write_run_metadata(run_spec: RunSpec, path: Path) -> None:

@@ -8,6 +8,8 @@ from typing import Any
 import numpy as np
 
 from freegrad.data_prep.batching import ArrayDataLoader
+from freegrad.execution.base import ExecutionDriver
+from freegrad.models.common.base import ModelMode
 from freegrad.training.state import TrainState
 
 
@@ -80,14 +82,22 @@ class TrainChunkRunner:
 
 
 class ValidationRunner:
-    def __init__(self, *, arrays: dict[str, np.ndarray], macro_batch_size: int, eval_step):
+    def __init__(
+        self,
+        *,
+        arrays: dict[str, np.ndarray],
+        macro_batch_size: int,
+        eval_step=None,
+        execution_driver: ExecutionDriver | None = None,
+    ):
         if macro_batch_size <= 0:
             raise ValueError("macro_batch_size must be positive.")
         self.arrays = arrays
         self.macro_batch_size = macro_batch_size
         self.eval_step = eval_step
+        self.execution_driver = execution_driver
 
-    def evaluate(self, params) -> dict[str, Any]:
+    def evaluate(self, variables) -> dict[str, Any]:
         loader = ArrayDataLoader(
             arrays=self.arrays,
             batch_size=self.macro_batch_size,
@@ -95,10 +105,37 @@ class ValidationRunner:
             seed=0,
             drop_last=False,
         )
+        if self.execution_driver is not None and getattr(self.execution_driver, "metric", None) is not None:
+            total_contribution = None
+            metric = getattr(self.execution_driver, "metric")
+            model = getattr(self.execution_driver, "model")
+            for batch in loader:
+                contribution = self.execution_driver.apply_batch(
+                    batch,
+                    apply=lambda micro_batch: metric.apply(
+                        model=model,
+                        variables=variables,
+                        batch=micro_batch,
+                        mode=ModelMode.EVAL,
+                    ),
+                    reduce=metric.reduce,
+                )
+                total_contribution = (
+                    contribution
+                    if total_contribution is None
+                    else metric.reduce(total_contribution, contribution)
+                )
+            if total_contribution is None:
+                return {"eval/loss": 0.0}
+            return {f"eval/{key}": value for key, value in metric.finalize(total_contribution).items()}
+
+        if self.eval_step is None:
+            raise ValueError("ValidationRunner requires eval_step or execution_driver.")
+
         total_examples = 0
         weighted_totals: dict[str, float] = {}
         for batch in loader:
-            batch_metrics = self.eval_step(params, batch)
+            batch_metrics = self.eval_step(variables, batch)
             batch_size_actual = int(np.asarray(batch["y"]).shape[0])
             total_examples += batch_size_actual
             for key, value in batch_metrics.items():

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from freegrad.runtime.interfaces import DataPreparerBuilder, DatasetLoader, LossBuilder, MetricsBuilder, ModelBuilder, OptimizerBuilder
+from freegrad.runtime.interfaces import DataPreparerBuilder, DatasetLoader, LearningStackBuilder, LossBuilder, MetricsBuilder, ModelBuilder
 from freegrad.runtime.paths import run_dir
 from freegrad.runtime.run import RunSpec
 
@@ -17,7 +17,7 @@ class ConditionSpec:
     dataset_loader: DatasetLoader
     data_preparer_builder: DataPreparerBuilder
     model_builder: ModelBuilder
-    optimizer_builder: OptimizerBuilder
+    learning_stack_builder: LearningStackBuilder
     loss_builder: LossBuilder
     metrics_builder: MetricsBuilder
     training_config: dict
@@ -35,7 +35,7 @@ class ConditionSpec:
                     dataset_loader=self.dataset_loader,
                     data_preparer_builder=self.data_preparer_builder,
                     model_builder=self.model_builder,
-                    optimizer_builder=self.optimizer_builder,
+                    learning_stack_builder=self.learning_stack_builder,
                     loss_builder=self.loss_builder,
                     metrics_builder=self.metrics_builder,
                     training_config=dict(self.training_config),

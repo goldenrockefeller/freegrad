@@ -6,10 +6,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from freegrad.losses.classification import build_cross_entropy_loss
-from freegrad.metrics.classification import build_classification_metrics
+from freegrad.learning import adam
+from freegrad.losses.classification import CrossEntropyLoss
+from freegrad.metrics.classification import ClassificationMetrics
 from freegrad.models.mlp import SimpleMLP
-from freegrad.optimizers.adam import Adam
 from freegrad.runtime.condition import ConditionSpec
 from freegrad.runtime.backends.local import LocalBackend
 
@@ -38,9 +38,9 @@ def test_smoke_condition_runs_and_writes_artifacts(tmp_path):
             "test_labels": raw_data["test_labels"],
         }),
         model_builder=lambda: SimpleMLP(),
-        optimizer_builder=lambda: Adam(learning_rate=1e-3),
-        loss_builder=build_cross_entropy_loss,
-        metrics_builder=build_classification_metrics,
+        learning_stack_builder=lambda: adam(learning_rate=1e-3),
+        loss_builder=lambda: CrossEntropyLoss(),
+        metrics_builder=lambda: ClassificationMetrics(),
         training_config={
             "mini_batch_size": 4,
             "macro_batch_size": 8,
