@@ -7,12 +7,44 @@ from freegrad.execution import SingleCPUExecutionDriver
 from freegrad.learning import adam, sgd
 from freegrad.losses.classification import CrossEntropyLoss
 from freegrad.metrics.classification import ClassificationMetrics
+from freegrad.models.common.base import ApplyResult, ModelMode, ModelVariables
+from freegrad.models.common.layout import infer_param_layout
 from freegrad.models.mlp import SimpleMLP
 from freegrad.training.eval_step import make_eval_step
 from freegrad.training.loops import TrainChunkRunner, ValidationRunner
 from freegrad.training.state import TrainState
 from freegrad.training.train_step import make_train_update_chunk_step
 from freegrad.utils.rng import make_rng
+
+
+class StatefulLinearModel:
+    def init(self, key, input_shape, num_classes):
+        del key
+        flat_dim = input_shape[0] * input_shape[1] * input_shape[2]
+        return ModelVariables(
+            params={
+                "w": jnp.zeros((flat_dim, num_classes), dtype=jnp.float32),
+                "b": jnp.zeros((num_classes,), dtype=jnp.float32),
+            },
+            state={
+                "train_calls": jnp.asarray(0, dtype=jnp.int32),
+                "rng_seen": jnp.asarray(False),
+            },
+        )
+
+    def apply(self, variables, x, mode=ModelMode.EVAL, rng_key=None):
+        flat = x.reshape((x.shape[0], -1))
+        output = flat @ variables.params["w"] + variables.params["b"]
+        model_state = variables.state
+        if mode == ModelMode.TRAIN:
+            model_state = {
+                "train_calls": variables.state["train_calls"] + 1,
+                "rng_seen": jnp.asarray(rng_key is not None),
+            }
+        return ApplyResult(output=output, model_state=model_state)
+
+    def param_layout(self, variables):
+        return infer_param_layout(variables.params)
 
 
 def _make_state_and_driver(*, seed: int, micro_batch_size: int = 4, stack=None):
@@ -58,6 +90,39 @@ def test_train_and_eval_steps_behave_as_expected():
     assert "eval/loss" in eval_metrics
     assert "eval/accuracy" in eval_metrics
     assert state.model_state == {}
+
+
+def test_training_propagates_model_state_rng_and_cpu_placement():
+    model = StatefulLinearModel()
+    variables = model.init(jax.random.PRNGKey(0), input_shape=(28, 28, 1), num_classes=10)
+    learning_stack = sgd(learning_rate=1e-2)
+    driver = SingleCPUExecutionDriver(
+        model=model,
+        loss=CrossEntropyLoss(),
+        metric=ClassificationMetrics(),
+        micro_batch_size=2,
+    )
+    state = TrainState(
+        step=0,
+        variables=variables,
+        learning_state=learning_stack.init(
+            variables,
+            param_layout=model.param_layout(variables),
+        ),
+        rng_key=make_rng(0),
+    )
+    batch = {
+        "x": jnp.ones((1, 4, 28, 28, 1), dtype=jnp.float32),
+        "y": jnp.array([[0, 1, 2, 3]], dtype=jnp.int32),
+    }
+
+    train_step = make_train_update_chunk_step(driver, learning_stack)
+    next_state, _ = train_step(state, batch)
+
+    assert int(next_state.variables.state["train_calls"]) == 2
+    assert bool(next_state.variables.state["rng_seen"])
+    assert next_state.learning_state.param_layout is not None
+    assert all(leaf.device.platform == "cpu" for leaf in jax.tree_util.tree_leaves(next_state.variables))
 
 
 def test_train_update_chunk_step_advances_multiple_batches():

@@ -42,14 +42,9 @@ def make_train_update_chunk_step(
     chunk_spec: TrainChunkSpec | None = None,
 ):
     if chunk_spec is None:
-        chunk_spec = TrainChunkSpec(num_updates=1, jittable=learning_stack.jittable)
+        chunk_spec = TrainChunkSpec(jittable=learning_stack.jittable)
 
-    def train_update_chunk_step(state: TrainState, update_batches):
-        def scan_step(carry, batch):
-            return _train_step_impl(carry, batch, driver, learning_stack)
+    def update_step(state: TrainState, batch):
+        return _train_step_impl(state, batch, driver, learning_stack)
 
-        state, metrics = jax.lax.scan(scan_step, state, update_batches)
-        last_metrics = jax.tree_util.tree_map(lambda value: value[-1], metrics)
-        return state, last_metrics
-
-    return jax.jit(train_update_chunk_step) if chunk_spec.jittable else train_update_chunk_step
+    return driver.compile_train_chunk(update_step, chunk_spec)

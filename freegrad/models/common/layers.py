@@ -35,12 +35,12 @@ def conv2d(
     return y + params["b"]
 
 
-def max_pool_2x2(x: jax.Array) -> jax.Array:
+def max_pool_2x2(x: jax.Array, padding: str = "SAME") -> jax.Array:
     return jax.lax.reduce_window(
         operand=x,
         init_value=-jnp.inf,
         computation=jax.lax.max,
         window_dimensions=(1, 2, 2, 1),
         window_strides=(1, 2, 2, 1),
-        padding="SAME",
+        padding=padding,
     )

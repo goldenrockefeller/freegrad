@@ -24,7 +24,8 @@ Note: This repo is only set up for unconstrained problems.
 Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
 Run tests:
@@ -36,13 +37,13 @@ pytest
 Run a condition:
 
 ```bash
-python scripts/run_condition.py specs.mnist.mlp_adam:make_condition
+python -m scripts.run_condition suites.mnist.conditions.mlp_adam:make_condition
 ```
 
 Run a study:
 
 ```bash
-python scripts/run_study.py specs.mnist.adam_comparison_study:make_study
+python -m scripts.run_study suites.mnist.adam_comparison_study:make_study
 ```
 
 Study runs write a `study.json` manifest at the study root. Rerunning the same study name/output path skips runs already marked `COMPLETED` and resumes incomplete or failed runs from their latest checkpoint when one exists.

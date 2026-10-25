@@ -6,7 +6,7 @@ import pickle
 from pathlib import Path
 
 
-CHECKPOINT_SCHEMA_VERSION = 3
+CHECKPOINT_SCHEMA_VERSION = 4
 
 
 def save_checkpoint(path: Path, state, metadata: dict | None = None) -> Path:

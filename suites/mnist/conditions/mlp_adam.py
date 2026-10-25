@@ -26,7 +26,9 @@ def make_condition() -> ConditionSpec:
             "macro_batch_size": 128,
             "eval_mini_batch_size": 128,
             "eval_macro_batch_size": 128,
-            "max_steps": 1000,
+            # 10 epochs over 55,000 training examples with drop_last=True:
+            # floor(55_000 / 128) * 10 = 4,290 updates.
+            "max_steps": 4_290,
             "train_chunk_size": 1,
             "eval_every": 100,
             "validation_size": 5000,

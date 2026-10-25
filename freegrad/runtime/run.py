@@ -10,6 +10,7 @@ from typing import Any
 import jax
 import numpy as np
 
+from freegrad.execution.base import TrainChunkSpec
 from freegrad.execution.single_cpu import SingleCPUExecutionDriver
 from freegrad.losses.base import ReducibleLoss
 from freegrad.losses.classification import CrossEntropyLoss
@@ -128,7 +129,14 @@ def run_one(run_spec: RunSpec) -> RunResult:
             micro_batch_size=validation_config.mini_batch_size,
         )
 
-        train_update_chunk_step = make_train_update_chunk_step(train_driver, learning_stack)
+        train_update_chunk_step = make_train_update_chunk_step(
+            train_driver,
+            learning_stack,
+            TrainChunkSpec(
+                num_updates=loop_config.train_chunk_size,
+                jittable=learning_stack.jittable,
+            ),
+        )
         eval_step = make_eval_step(eval_driver)
         train_runner = TrainChunkRunner(
             arrays={"x": arrays["train_images"], "y": arrays["train_labels"]},
@@ -232,7 +240,10 @@ def _initialize_or_resume_state(
     input_shape = tuple(arrays["train_images"].shape[1:])
     num_classes = int(np.max(arrays["train_labels"])) + 1
     variables = model.init(model_key, input_shape=input_shape, num_classes=num_classes)
-    learning_state = learning_stack.init(variables)
+    learning_state = learning_stack.init(
+        variables,
+        param_layout=model.param_layout(variables),
+    )
     return TrainState(step=0, variables=variables, learning_state=learning_state, rng_key=train_key)
 
 

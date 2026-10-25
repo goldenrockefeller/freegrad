@@ -79,9 +79,12 @@ class RecordingRepair(NoOpRepair):
         update_signal: UpdateSignal,
         objective,
         conditioning_info: Any,
+        param_layout,
     ) -> RepairResult:
         assert update_signal.updates is not None
         assert jax.tree_util.tree_structure(raw_gradient) == jax.tree_util.tree_structure(conditioned_gradient)
+        assert param_layout is not None
+        assert param_layout.groups
         return RepairResult(
             variables=variables,
             search_memory=SearchMemory(data={"repaired": jnp.asarray(1)}),
@@ -100,7 +103,7 @@ def test_step_size_runs_before_repair_and_repair_does_not_mutate_gradient():
         repair=RecordingRepair(),
         update=stack.update,
     )
-    state = stack.init(variables)
+    state = stack.init(variables, param_layout=driver.model.param_layout(variables))
     _, next_state, metrics = stack.step(variables=variables, state=state, driver=driver, batch=_batch())
 
     assert int(next_state.search_memory.data["repaired"]) == 1

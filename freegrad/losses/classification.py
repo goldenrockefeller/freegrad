@@ -39,6 +39,7 @@ class CrossEntropyLoss(MeanLossReduction):
         return LossContribution(
             total=cross_entropy_sum_from_logits(result.output, labels),
             count=jnp.asarray(labels.shape[0], dtype=jnp.float32),
+            model_state=result.model_state,
         )
 
 

@@ -16,6 +16,7 @@ FinalValue = TypeVar("FinalValue")
 BatchApplyFn = Callable[[dict[str, jax.Array]], Contribution]
 BatchReduceFn = Callable[[Contribution, Contribution], Contribution]
 BatchFinalizeFn = Callable[[Contribution], FinalValue]
+TrainUpdateFn = Callable[[Any, dict[str, jax.Array]], tuple[Any, dict[str, Any]]]
 
 
 @dataclass(frozen=True)
@@ -36,9 +37,13 @@ class ObjectiveEvaluation:
 
 @dataclass(frozen=True)
 class TrainChunkSpec:
-    num_updates: int
+    num_updates: int | None = None
     jittable: bool = True
     compile_policies: bool = True
+
+    def __post_init__(self) -> None:
+        if self.num_updates is not None and self.num_updates <= 0:
+            raise ValueError("num_updates must be positive when provided.")
 
 
 @runtime_checkable
@@ -99,4 +104,14 @@ class ExecutionDriver(Protocol):
         reduce: BatchReduceFn,
         finalize: BatchFinalizeFn | None = None,
     ) -> Contribution | FinalValue:
+        ...
+
+    def compile(self, function: Callable[..., Any], *, jittable: bool = True) -> Callable[..., Any]:
+        ...
+
+    def compile_train_chunk(
+        self,
+        update_step: TrainUpdateFn,
+        chunk_spec: TrainChunkSpec,
+    ) -> Callable[..., Any]:
         ...

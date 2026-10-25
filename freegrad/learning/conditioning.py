@@ -10,7 +10,7 @@ import jax.numpy as jnp
 
 from freegrad.execution.base import ExecutionDriver, ObjectiveEvaluation
 from freegrad.learning.base import ConditioningResult
-from freegrad.models.common.base import ModelVariables
+from freegrad.models.common.base import ModelVariables, ParamLayout
 from freegrad.utils.pytrees import tree_zeros_like
 
 
@@ -31,8 +31,8 @@ class IdentityConditioner:
     name: str = "identity_conditioner"
     jittable: bool = True
 
-    def init(self, params: Any) -> None:
-        del params
+    def init(self, params: Any, *, param_layout: ParamLayout | None = None) -> None:
+        del params, param_layout
         return None
 
     def apply(
@@ -92,7 +92,13 @@ class AdamConditioner:
     name: str = "adam_conditioner"
     jittable: bool = True
 
-    def init(self, params: Any) -> AdamConditionerState:
+    def init(
+        self,
+        params: Any,
+        *,
+        param_layout: ParamLayout | None = None,
+    ) -> AdamConditionerState:
+        del param_layout
         zeros = tree_zeros_like(params)
         return AdamConditionerState(count=jnp.asarray(0, dtype=jnp.int32), mu=zeros, nu=zeros)
 

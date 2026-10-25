@@ -18,7 +18,7 @@ from freegrad.learning.base import (
     apply_updates,
     negative_step,
 )
-from freegrad.models.common.base import ModelVariables
+from freegrad.models.common.base import ModelVariables, ParamLayout
 from freegrad.utils.pytrees import tree_add, tree_scalar_mul, tree_zeros_like
 
 
@@ -86,8 +86,9 @@ class NoOpRepair:
         update_signal: UpdateSignal,
         objective: ObjectiveEvaluation,
         conditioning_info: Any,
+        param_layout: ParamLayout | None,
     ) -> RepairResult:
-        del raw_gradient, conditioned_gradient, update_signal, objective, conditioning_info
+        del raw_gradient, conditioned_gradient, update_signal, objective, conditioning_info, param_layout
         return RepairResult(variables=variables, search_memory=search_memory, metrics={})
 
 
@@ -96,8 +97,8 @@ class GradientDescentUpdate:
     name: str = "gradient_descent_update"
     jittable: bool = True
 
-    def init(self, params: Any) -> SearchMemory:
-        del params
+    def init(self, params: Any, *, param_layout: ParamLayout | None = None) -> SearchMemory:
+        del params, param_layout
         return SearchMemory(data=None)
 
     def build_update_signal(
@@ -127,7 +128,8 @@ class NesterovUpdate:
     name: str = "nesterov_update"
     jittable: bool = True
 
-    def init(self, params: Any) -> SearchMemory:
+    def init(self, params: Any, *, param_layout: ParamLayout | None = None) -> SearchMemory:
+        del param_layout
         return SearchMemory(data={"velocity": tree_zeros_like(params)})
 
     def build_update_signal(

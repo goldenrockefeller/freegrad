@@ -8,7 +8,7 @@ from typing import Any, Mapping, Protocol, runtime_checkable
 import jax
 
 from freegrad.execution.base import ExecutionDriver, ObjectiveEvaluation
-from freegrad.models.common.base import ModelVariables
+from freegrad.models.common.base import ModelVariables, ParamLayout
 from freegrad.utils.pytrees import tree_add, tree_scalar_mul
 
 
@@ -35,21 +35,27 @@ class LearningStackState:
     search_memory: SearchMemory
     conditioner_state: Any
     step_size_state: Any
+    param_layout: ParamLayout | None = None
 
     def tree_flatten(self):
-        return (self.search_memory, self.conditioner_state, self.step_size_state), None
+        return (self.search_memory, self.conditioner_state, self.step_size_state), self.param_layout
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        del aux_data
         search_memory, conditioner_state, step_size_state = children
-        return cls(search_memory=search_memory, conditioner_state=conditioner_state, step_size_state=step_size_state)
+        return cls(
+            search_memory=search_memory,
+            conditioner_state=conditioner_state,
+            step_size_state=step_size_state,
+            param_layout=aux_data,
+        )
 
     def replace(self, **kwargs: Any) -> "LearningStackState":
         values = {
             "search_memory": self.search_memory,
             "conditioner_state": self.conditioner_state,
             "step_size_state": self.step_size_state,
+            "param_layout": self.param_layout,
         }
         values.update(kwargs)
         return LearningStackState(**values)
@@ -114,7 +120,7 @@ class ConditioningPolicy(Protocol):
     name: str
     jittable: bool
 
-    def init(self, params: Any) -> Any:
+    def init(self, params: Any, *, param_layout: ParamLayout | None = None) -> Any:
         ...
 
     def apply(
@@ -179,6 +185,7 @@ class RepairPolicy(Protocol):
         update_signal: UpdateSignal,
         objective: ObjectiveEvaluation,
         conditioning_info: Any,
+        param_layout: ParamLayout | None,
     ) -> RepairResult:
         ...
 
@@ -188,7 +195,7 @@ class UpdatePolicy(Protocol):
     name: str
     jittable: bool
 
-    def init(self, params: Any) -> SearchMemory:
+    def init(self, params: Any, *, param_layout: ParamLayout | None = None) -> SearchMemory:
         ...
 
     def build_update_signal(
@@ -231,11 +238,17 @@ class LearningStack:
             )
         )
 
-    def init(self, variables: ModelVariables) -> LearningStackState:
+    def init(
+        self,
+        variables: ModelVariables,
+        *,
+        param_layout: ParamLayout | None = None,
+    ) -> LearningStackState:
         return LearningStackState(
-            search_memory=self.update.init(variables.params),
-            conditioner_state=self.conditioner.init(variables.params),
+            search_memory=self.update.init(variables.params, param_layout=param_layout),
+            conditioner_state=self.conditioner.init(variables.params, param_layout=param_layout),
             step_size_state=self.step_size.init(),
+            param_layout=param_layout,
         )
 
     def step(
@@ -289,6 +302,7 @@ class LearningStack:
             update_signal=update_signal,
             objective=objective,
             conditioning_info=conditioned.info,
+            param_layout=state.param_layout,
         )
         next_variables, next_search_memory, update_metrics = self.update.commit(
             variables=repaired.variables,

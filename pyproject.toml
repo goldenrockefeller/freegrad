@@ -14,7 +14,7 @@ dependencies = []
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["freegrad*", "specs*"]
+include = ["freegrad*", "suites*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -11,7 +11,7 @@ from freegrad.utils.imports import import_from_string
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if len(argv) != 1:
-        print("Usage: python scripts/run_condition.py module.submodule:factory")
+        print("Usage: python -m scripts.run_condition module.submodule:factory")
         return 1
     try:
         factory = import_from_string(argv[0])

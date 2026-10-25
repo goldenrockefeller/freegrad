@@ -18,3 +18,4 @@ def test_simple_mlp_forward_shape():
     leaves = jax.tree_util.tree_leaves(variables.params)
     assert leaves
     assert all(isinstance(leaf, jax.Array) for leaf in leaves)
+    assert sum(leaf.size for leaf in leaves) == 101_770

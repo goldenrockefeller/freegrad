@@ -11,3 +11,5 @@ results/
 !results/.gitkeep
 data/
 *.ipynb_checkpoints
+graphify-out/
+GRAPH_REPORT.md
