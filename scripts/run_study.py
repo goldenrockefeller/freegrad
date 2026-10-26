@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import sys
 
 from freegrad.runtime.backends.base import StudyConfirmationHandler
@@ -25,6 +26,11 @@ class CLIStudyConfirmationHandler(StudyConfirmationHandler):
             print("Please answer 'y' or 'n'.")
 
 
+def report_progress(message: str) -> None:
+    timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
+    print(f"[{timestamp}] {message}", flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if len(argv) != 1:
@@ -36,7 +42,10 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"Failed to load study factory: {exc}")
         return 1
-    backend = LocalBackend(confirmation_handler=CLIStudyConfirmationHandler())
+    backend = LocalBackend(
+        confirmation_handler=CLIStudyConfirmationHandler(),
+        progress_callback=report_progress,
+    )
     try:
         results = backend.run_study(study)
     except StudyExecutionAborted as exc:

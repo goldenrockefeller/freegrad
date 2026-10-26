@@ -46,6 +46,15 @@ Run a study:
 python -m scripts.run_study suites.mnist.adam_comparison_study:make_study
 ```
 
+Watch run status in a separate terminal (Windows, macOS, or Linux):
+
+```bash
+python -m scripts.watch_study results/mnist_adam_model_comparison
+```
+
+The dashboard refreshes every two seconds and stops with `Ctrl+C`. Use
+`--once` to print one snapshot without watching.
+
 Study runs write a `study.json` manifest at the study root. Rerunning the same study name/output path skips runs already marked `COMPLETED` and resumes incomplete or failed runs from their latest checkpoint when one exists.
 
 ## Training config

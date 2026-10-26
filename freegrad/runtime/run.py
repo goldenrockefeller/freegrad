@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import jax
 import numpy as np
@@ -61,6 +61,9 @@ class RunResult:
     output_dir: Path
     final_metrics: dict[str, Any]
 
+
+ProgressCallback = Callable[[str], None]
+
 # TODO add n_chunks_per_plot
 @dataclass(frozen=True)
 class TrainingLoopConfig:
@@ -91,7 +94,10 @@ def checkpoint_metadata(run_spec: RunSpec, *, final: bool = False) -> dict[str, 
     return metadata
 
 
-def run_one(run_spec: RunSpec) -> RunResult:
+def run_one(
+    run_spec: RunSpec,
+    progress_callback: ProgressCallback | None = None,
+) -> RunResult:
     context = _make_context(run_spec.output_dir)
     context.output_dir.mkdir(parents=True, exist_ok=True)
     _write_run_metadata(run_spec, context.run_path)
@@ -184,12 +190,26 @@ def run_one(run_spec: RunSpec) -> RunResult:
                 last_eval_metrics = _to_python_dict(validation_runner.evaluate(state.variables))
                 logger.log_metrics(current_step, last_eval_metrics)
                 last_eval_step = current_step
+                _report_validation_progress(
+                    progress_callback,
+                    run_spec,
+                    current_step,
+                    loop_config.max_steps,
+                    last_eval_metrics,
+                )
 
         final_step = int(np.asarray(state.step))
         if last_eval_step != final_step:
             last_eval_metrics = _to_python_dict(validation_runner.evaluate(state.variables))
             logger.log_metrics(final_step, last_eval_metrics)
             last_eval_step = final_step
+            _report_validation_progress(
+                progress_callback,
+                run_spec,
+                final_step,
+                loop_config.max_steps,
+                last_eval_metrics,
+            )
 
         if loop_config.n_chunks_per_checkpoint > 0:
             save_checkpoint(
@@ -426,3 +446,21 @@ def _to_python_dict(metrics: dict[str, Any]) -> dict[str, float]:
 def _to_python_float(value: Any) -> float:
     array = np.asarray(jax.device_get(value))
     return float(array.reshape(()))
+
+
+def _report_validation_progress(
+    callback: ProgressCallback | None,
+    run_spec: RunSpec,
+    step: int,
+    max_steps: int,
+    metrics: dict[str, float],
+) -> None:
+    if callback is None:
+        return
+    details = []
+    if "eval/accuracy" in metrics:
+        details.append(f"eval_accuracy={metrics['eval/accuracy']:.4f}")
+    if "eval/loss" in metrics:
+        details.append(f"eval_loss={metrics['eval/loss']:.4f}")
+    suffix = " " + " ".join(details) if details else ""
+    callback(f"[run] PROGRESS name={run_spec.name} step={step}/{max_steps}{suffix}")

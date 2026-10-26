@@ -55,7 +55,8 @@ def test_smoke_condition_runs_and_writes_artifacts(tmp_path):
         },
     )
 
-    backend = LocalBackend(root_output_dir=tmp_path)
+    progress_messages = []
+    backend = LocalBackend(root_output_dir=tmp_path, progress_callback=progress_messages.append)
     results = backend.run_condition(condition)
     run_dir = tmp_path / "smoke_mnist_mlp_adam" / "conditions" / "smoke_mnist_mlp_adam" / "runs" / "seed_0"
 
@@ -73,6 +74,11 @@ def test_smoke_condition_runs_and_writes_artifacts(tmp_path):
     assert [row["step"] for row in metric_rows] == [2, 2, 4, 4]
     assert ["train/loss" in row for row in metric_rows] == [True, False, True, False]
     assert ["eval/loss" in row for row in metric_rows] == [False, True, False, True]
+    assert any("[condition] START" in message for message in progress_messages)
+    assert any("[run 1/1] START" in message for message in progress_messages)
+    assert any("step=2/4" in message for message in progress_messages)
+    assert any("[run 1/1] COMPLETED" in message for message in progress_messages)
+    assert any("[condition] COMPLETED" in message for message in progress_messages)
     
 def test_training_config_rejects_unknown_keys():
     from freegrad.runtime.run import _parse_training_config
